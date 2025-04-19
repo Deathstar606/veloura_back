@@ -8,6 +8,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 var index = require('./routes/index');
+var users = require('./routes/users');
 var cloth = require('./routes/clothesRouter')
 var order = require('./routes/orderRouter')
 
@@ -55,6 +56,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(passport.initialize());
 
 app.use('/', index);
+app.use('/users', users);
 app.use('/clothes', cloth);
 app.use('/orders', order);
 

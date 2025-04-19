@@ -11,7 +11,7 @@ orderRouter.use(bodyParser.json());
 
 orderRouter.route('/')
 .options(cors.corsWithOptions, (req, res) => { res.sendStatus(200); })
-.get(cors.cors, async (req, res, next) => {
+.get(cors.cors, authenticate.verifyUser, async (req, res, next) => {
     try {
       const orders = await Order.find(req.query)
       res.status(200).json(orders);
