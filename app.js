@@ -29,18 +29,24 @@ connect.then((db) => {
 
 const corsOptions = {
   origin: (origin, callback) => {
-    const allowedOrigins = ["https://deathstar606.github.io", 'http://localhost:3000'];
-    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
-      console.log("allowed origin: ", origin);
+    const allowedOrigins = ["https://deathstar606.github.io", "http://localhost:3000", "null"];
+
+    // Log actual value of origin to help debug
+    console.log("Request received from origin:", origin);
+
+    if (!origin || allowedOrigins.includes(origin)) {
+      // Allow if origin is undefined (like curl, Postman), or matches
+      console.log("✅ Allowed origin:", origin);
       callback(null, true);
     } else {
-      console.log("denied origin: ", origin);
-      callback(new Error('Not allowed by CORS'));
+      console.log("❌ Denied origin:", origin);
+      callback(new Error("Not allowed by CORS"));
     }
   },
-  credentials: true, // Allow sending cookies and other credentials with the request
-  optionsSuccessStatus: 200 // Set the successful response status code for preflight requests
+  credentials: true,
+  optionsSuccessStatus: 200,
 };
+
 
 var app = express();
 

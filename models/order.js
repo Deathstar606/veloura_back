@@ -16,7 +16,9 @@ const orderSchema = new mongoose.Schema({
   email: { type: String, default: "" },
   phoneNumber: { type: String, default: "" },
   address: { type: String, default: "" },
-  order_type: { type: String, enum: ['Online', 'In-Store'], required: true },
+  payment_stat:{ type: Boolean, default: false },
+  order_stat:{ type: String, default: "" },
+  transaction_id: { type: String, required: true },
   items: [orderItemSchema],
   total: { type: Number, required: true }
 }, { timestamps: true });

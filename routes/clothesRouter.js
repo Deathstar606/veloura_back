@@ -1,34 +1,16 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const mongoose = require('mongoose');
-const multer = require('multer');
-const fs = require('fs');
-const path = require('path');
+const cloudinary = require('cloudinary').v2;
 const cors = require('./cors');
 
 const Clothes = require('../models/clothes');
 var authenticate = require('../authenticate');
 
-/* const storageD = multer.diskStorage({
-    destination: function (req, file, cb) {
-      cb(null, 'public/images');
-    },
-    filename: function (req, file, cb) {
-      cb(null, Date.now() + path.extname(file.originalname)); // Appending extension
-    }
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
 });
-
-const storageC = multer.diskStorage({
-    destination: function (req, file, cb) {
-      cb(null, 'public/images/Category');
-    },
-    filename: function (req, file, cb) {
-      cb(null, Date.now() + path.extname(file.originalname)); // Appending extension
-    }
-});
-
-const uploadDish = multer({ storage: storageD });
-const uploadCat = multer({ storage: storageC }); */
 
 const ClothesRouter = express.Router();
 
@@ -44,56 +26,38 @@ ClothesRouter.route('/')
         next(error);
     }
 })
-.post(cors.corsWithOptions, async (req, res) => {
-    const { category, name, new: isNew, best, images, color, size, price, discount } = req.body;
-  
-    const clothingItem = {
-      name,
-      new: isNew,
-      best,
-      images: images || new Map(),
-      color,
-      size,
-      price,
-      discount,
-    };
-  
-    try {
-      // Check if category already exists
-      let categoryDoc = await Clothes.findOne({ category });
-  
-      if (categoryDoc) {
-        // Add new item to the existing category
-        categoryDoc.items.push(clothingItem);
-        await categoryDoc.save();
-      } else {
-        // Create a new category and add item to it
-        categoryDoc = new Clothes({
-          category,
-          items: [clothingItem],
-        });
-        await categoryDoc.save();
-      }
-  
-      res.status(200).json({ message: 'Clothing item added successfully', data: categoryDoc });
-    } catch (error) {
-      res.status(500).json({ message: error.message });
-    }
-})  
-.delete(cors.corsWithOptions, async (req, res) => {
-    const { _id } = req.body;
-    
-    try {
-        const deletedSunItem = await Sunglasses.findByIdAndDelete(_id);
+.post(cors.corsWithOptions, authenticate.verifyUser, async (req, res) => {
+  const { category, items } = req.body;
 
-        if (!deletedSunItem) {
-            return res.status(404).json({ message: 'Item not found' });
-        }
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ message: "No clothing item(s) provided." });
+  }
 
-        res.status(200).json(deletedSunItem);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+  const clothingItem = {
+    ...items[0],
+    images: items[0].images || {}, // keep as plain object
+    size: items[0].size || {}      // keep as plain object
+  };
+  
+  console.log(clothingItem); 
+  try {
+    let categoryDoc = await Clothes.findOne({ category });
+
+    if (categoryDoc) {
+      categoryDoc.items.push(clothingItem);
+      await categoryDoc.save();
+    } else {
+      categoryDoc = new Clothes({
+        category,
+        items: [clothingItem],
+      });
+      await categoryDoc.save();
     }
+
+    res.status(200).json({ message: 'Clothing item added successfully', data: categoryDoc });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 });
 
 ClothesRouter.route('/:category/:clothesId')
@@ -124,49 +88,108 @@ ClothesRouter.route('/:category/:clothesId')
         next(err);
     }
 })
-/* .post(cors.corsWithOptions, authenticate.verifyUser, authenticate.verifyAdmin, (req, res, next) => {
-    const { glassId } = req.params;
+.delete(cors.cors, async (req, res, next) => {
+  try {
+      const { category, clothesId } = req.params;
 
-    Sunglasses.findById(glassId)
-        .then((sunglasses) => {
-            if (sunglasses) {
-                // Update the fields
-                sunglasses.images = req.body.images || sunglasses.images; // Preserve existing if not provided
-                sunglasses.color = req.body.color || sunglasses.color;   // Preserve existing if not provided
+      // Step 1: Find the category document
+      const categoryDoc = await Clothes.findOne({ category });
+      if (!categoryDoc) {
+          return res.status(404).json({ error: `Category ${category} not found` });
+      }
 
-                return sunglasses.save(); // Save the updated document
-            } else {
-                const err = new Error(`Glass ${glassId} not found`);
-                err.status = 404;
-                return next(err);
-            }
-        })
-        .then((updatedSunglasses) => {
-            res.statusCode = 200;
-            res.setHeader('Content-Type', 'application/json');
-            res.json(updatedSunglasses);
-        })
-        .catch((err) => next(err));
-}) */
-.put(cors.corsWithOptions, authenticate.verifyUser, authenticate.verifyAdmin, (req, res, next) => {
-    Clothes.findByIdAndUpdate(req.params.dishId, {
-        $set: req.body
-    }, { new: true })
-    .then((dish) => {
-        res.statusCode = 200;
-        res.setHeader('Content-Type', 'application/json');
-        res.json(dish);
-    }, (err) => next(err))
-    .catch((err) => next(err));
-})
-.delete(cors.corsWithOptions, authenticate.verifyUser, authenticate.verifyAdmin, (req, res, next) => {
-    Clothes.findByIdAndRemove(req.params.dishId)
-    .then((resp) => {
-        res.statusCode = 200;
-        res.setHeader('Content-Type', 'application/json');
-        res.json(resp);
-    }, (err) => next(err))
-    .catch((err) => next(err));
+      // Step 2: Find the specific item by ID
+      const itemToRemove = categoryDoc.items.id(clothesId);
+      if (!itemToRemove) {
+          return res.status(404).json({ error: `Item ${clothesId} not found in category ${category}` });
+      }
+
+      // Step 3: Define Cloudinary folder path
+      const folderPrefix = `veloura_clothes/${itemToRemove.name}/`;
+      console.log(`Deleting images from Cloudinary folder: ${folderPrefix}`);
+      // Step 4: Delete all images in the folder from Cloudinary
+      const { resources } = await cloudinary.api.resources({
+          type: 'upload',
+          prefix: folderPrefix,
+          max_results: 100,
+      });
+
+      const deletePromises = resources.map(resource =>
+          cloudinary.uploader.destroy(resource.public_id)
+      );
+
+      await Promise.all(deletePromises);
+
+      // Step 5: Remove the item and save
+      itemToRemove.remove();
+      await categoryDoc.save();
+
+      res.status(200).json({ message: "Clothing item and associated images deleted successfully." });
+  } catch (error) {
+      next(error);
+  }
+});
+
+ClothesRouter.route('/:category/:clothesId/newdiscount')
+.options(cors.corsWithOptions, (req, res) => { res.sendStatus(200); })
+.post(cors.corsWithOptions, authenticate.verifyUser, async (req, res, next) => {
+    const { category, clothesId } = req.params;
+    const { newdiscount } = req.body;
+    try {
+      const categoryDoc = await Clothes.findOne({ category });
+  
+      if (!categoryDoc) {
+        const err = new Error(`Category '${category}' not found`);
+        err.status = 404;
+        return next(err);
+      }
+  
+      const itemToUpdate = categoryDoc.items.id(clothesId);
+  
+      if (!itemToUpdate) {
+        const err = new Error(`Clothing item with ID '${clothesId}' not found in category '${category}'`);
+        err.status = 404;
+        return next(err);
+      }
+  
+      itemToUpdate.discount = parseFloat(newdiscount); // set new discount
+      await categoryDoc.save();
+  
+      res.status(200).json({ message: `Discount updated to ${newdiscount}%`, updatedItem: itemToUpdate });
+    } catch (err) {
+      next(err);
+    }
+});
+
+ClothesRouter.route('/:category/:clothesId/best')
+.options(cors.corsWithOptions, (req, res) => { res.sendStatus(200); })
+.post(cors.corsWithOptions, authenticate.verifyUser, async (req, res, next) => {
+    const { category, clothesId } = req.params;
+  
+    try {
+      const categoryDoc = await Clothes.findOne({ category });
+  
+      if (!categoryDoc) {
+        const err = new Error(`Category '${category}' not found`);
+        err.status = 404;
+        return next(err);
+      }
+  
+      const itemToUpdate = categoryDoc.items.id(clothesId);
+  
+      if (!itemToUpdate) {
+        const err = new Error(`Clothing item with ID '${clothesId}' not found in category '${category}'`);
+        err.status = 404;
+        return next(err);
+      }
+  
+      itemToUpdate.best = true; // mark as best
+      await categoryDoc.save();
+  
+      res.status(200).json({ message: "Clothing item marked as 'best'", updatedItem: itemToUpdate });
+    } catch (err) {
+      next(err);
+    }
 });
 
 module.exports = ClothesRouter;
